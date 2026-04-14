@@ -65,13 +65,6 @@ aspectratio=169%
 
 \frame[plain]{\titlepage}
 
-\AtBeginSection[]
-{
-  \frame{\frametitle{}
-    \tableofcontents[currentsection,hideothersubsections]
-  }
-}
-
 \begin{frame}{Agenda}
 \begin{itemize}
   \item Problem Statement and proposed Solution
@@ -104,6 +97,9 @@ aspectratio=169%
       different granularity than the guest, introducing extra delays
       and cache/TLB thrashing on vCPU migration
   \end{itemize}
+  \item \textbf{Design constraint:} the hypervisor is opaque and
+    non-cooperative -- no new ABI, no host-side changes, no
+    inter-guest channel (e.g.\ PR/SM, PowerVM)
 \end{itemize}
 \column{0.45\linewidth}
 \includegraphics[width=\linewidth]{problem}
@@ -114,12 +110,14 @@ aspectratio=169%
 \begin{columns}
 \column{0.55\linewidth}
 \begin{itemize}
-  \item Every guest does proportional back-off
-  \item The amount of vCPUs to use is driven by steal time
   \item The vCPUs each guest can safely use are denoted as
     \emph{preferred} CPUs
-  \item Aim: sum of preferred CPUs $\le$ pCPUs, which achieves less
-    vCPU preemption
+  \item \textbf{Mechanism:} each guest independently adjusts its
+    preferred CPU set from locally observed steal time
+  \item \textbf{Fairness:} all guests run the same backoff logic, so
+    they converge without talking to each other
+  \item \textbf{Aim:} sum of preferred CPUs $\le$ pCPUs, which
+    achieves less vCPU preemption
 \end{itemize}
 \medskip
 Advantage of a context switch within the vCPU instead:
@@ -205,11 +203,13 @@ steal-driven vCPU backoff}}
   \item Compute steal time ratio from \texttt{CPUTIME\_STEAL} across
     all online CPUs
   \item If steal time is above the threshold, reduce preferred CPUs
-    by one core. Core granularity is used because some hypervisors
-    (e.g.\ PowerVM) schedule at core granularity -- this yields the
-    best benefit
+  \begin{itemize}
+    \item Current implementation reduces by one core, because some
+      hypervisors (e.g.\ PowerVM) schedule at core granularity --
+      this yields the best benefit
+  \end{itemize}
   \item If steal time is below the threshold, increase preferred
-    CPUs by one core
+    CPUs
   \item Simple heuristics avoid oscillations: only consecutive
     high/low steal values are considered
 \end{itemize}
@@ -260,8 +260,11 @@ steal-driven vCPU backoff}}
 \begin{itemize}
   \item \texttt{/sys/devices/system/cpu/preferred} -- current
     preferred CPUs
-  \item \texttt{STEAL\_MONITOR} sched feature (disabled by default)
-  \item Debugfs knobs for thresholds and sampling period
+  \item \texttt{STEAL\_MONITOR} sched feature -- per-architecture
+    opt-in; off until the arch enables it
+  \item Debugfs knobs for thresholds and sampling period -- escape
+    hatch for debugging, not a per-workload admin interface
+  \item Plan: pick per-architecture defaults
 \end{itemize}
 \begin{verbatim}
 # echo STEAL_MONITOR > /sys/kernel/debug/sched/features
@@ -395,6 +398,59 @@ steal_mon_period:1000
   \item How to avoid oscillations in complex overcommit cases?
   \item Should steal time be computed based on online CPUs or
     preferred CPUs?
+\end{itemize}
+\end{frame}
+
+\section*{Backup}
+
+\begin{frame}{Backup: avoiding host under-utilization}
+\begin{itemize}
+  \item \textbf{Implemented today:} fast shrink, slow grow -- same
+    as TCP
+  \item \textbf{Idea:} EWMA-filter the steal-time signal -- same
+    as PELT
+  \item \textbf{Idea:} rate limit preferred-mask changes
+  \item \textbf{Idea:} randomize the sampling phase and mask-change
+    rate across guests to avoid synchronized decisions
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Backup: fairness without coordination}
+\begin{itemize}
+  \item Non-cooperative hypervisors are the main reason this work
+    exists
+  \item Coordination via the host is not an option on PR/SM or PowerVM
+  \item Similar to TCP: no central coordinator
+  \item One could do better there with explicit host cooperation, but
+    the uncoordinated mechanism already improves things
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Backup: is this SMT-specific?}
+\begin{itemize}
+  \item No. Nothing in the mechanism depends on SMT
+  \item Current implementation adjusts the preferred mask by one
+    \emph{core} only because some hypervisors (e.g.\ PowerVM) schedule
+    at core granularity
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Backup: steal-time collection context}
+\begin{itemize}
+  \item Under heavy overcommit the kworker itself can be stolen
+  \item \textbf{Idea:} keep the computation inside the tick
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Backup: replacing \texttt{stop\_one\_cpu\_nowait()}}
+\begin{itemize}
+  \item Current v2 pushes tasks off non-preferred CPUs via the CPU
+    stopper -- heavy-handed (runs at \texttt{stop\_sched\_class},
+    above RT/DL) for what is a soft placement hint
+  \item \textbf{Idea:} build on Vincent Guittot's CFS push-task mechanism
+  \item {\small\href{https://lore.kernel.org/all/20251202181242.1536213-1-vincent.guittot@linaro.org/}{[PATCH
+    0/6 v8] sched/fair: Add push task mechanism and handle more EAS
+    cases}}
 \end{itemize}
 \end{frame}
 
