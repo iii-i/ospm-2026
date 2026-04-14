@@ -1,0 +1,420 @@
+% Copyright (c) 2026 IBM
+%
+% Must be processed with XeLaTeX
+
+% Local Variables:
+% coding: utf-8
+% End:
+
+\documentclass[xetex, table, 10pt,%
+aspectratio=169%
+]{beamer}
+\usepackage{fontspec}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{colortbl}
+\usepackage{wasysym}
+\usepackage{hyperref}
+\usepackage{graphicx}
+\usepackage{textcomp}
+
+\usepackage[english]{babel}
+
+\usepackage{tikz}
+\usepackage{pifont}
+\usetikzlibrary{shapes}
+\usetikzlibrary{positioning}
+\usetikzlibrary{fit}
+\usetikzlibrary{arrows}
+\usetikzlibrary{decorations.pathreplacing}
+\usetikzlibrary{decorations.pathmorphing}
+\usetikzlibrary{shadows}
+\usetikzlibrary{shapes.symbols}
+\usetikzlibrary{shapes.callouts}
+\usetikzlibrary{chains}
+\usetikzlibrary{patterns}
+
+\usetheme{ClearIBM}
+\setmainfont{IBM Plex Serif}
+\setsansfont{IBM Plex Sans}
+\setmonofont{IBM Plex Mono}
+
+\newfontfamily\symbolfont{DejaVu Sans}
+\beamertemplatenavigationsymbolsempty
+
+\hypersetup{
+  pdftitle={Paravirt Scheduling: Framework for better CPU usage},
+  pdfauthor={Shrikanth Hegde, Ilya Leoshkevich},
+  pdfsubject={OSPM 2026},
+  pdfkeywords={paravirt, scheduling, vCPU},
+  pdfstartview=Fit,
+  colorlinks=true,
+  urlcolor=blue,
+  linkcolor=black}
+
+\title[Paravirt Scheduling]{Paravirt Scheduling:\\ Framework for better CPU usage}
+\author{Shrikanth Hegde \and Ilya Leoshkevich}
+\institute{IBM}
+\date{OSPM 2026, Cambridge}
+
+\pgfdeclarelayer{background}
+\pgfdeclarelayer{foreground}
+\pgfsetlayers{background,main,foreground}
+
+\begin{document}
+
+\frame[plain]{\titlepage}
+
+\AtBeginSection[]
+{
+  \frame{\frametitle{}
+    \tableofcontents[currentsection,hideothersubsections]
+  }
+}
+
+\begin{frame}{Agenda}
+\begin{itemize}
+  \item Problem Statement and proposed Solution
+  \item Existing methods
+  \item Journey so far
+  \item Design goals
+  \item Implementation details
+  \item s390 background
+  \item Performance numbers
+  \item Open questions
+\end{itemize}
+\end{frame}
+
+\section{Problem Statement and Solution}
+
+\begin{frame}{Problem Statement: vCPU Overcommit and vCPU Preemption}
+\begin{columns}
+\column{0.55\linewidth}
+\begin{itemize}
+  \item Multiple VMs sharing the underlying CPU resources, with
+    overcommit (sum of vCPUs $>$ pCPUs)
+  \item High CPU utilization in multiple VMs at the same time leads
+    to vCPU preemption
+  \item Why vCPU preemption can be expensive:
+  \begin{itemize}
+    \item \textbf{vCPU context:} a vCPU may be holding a mutex or
+      spinlock, or running with interrupts disabled, with other vCPUs
+      waiting on it
+    \item \textbf{Hypervisor overhead:} hypervisors may schedule at a
+      different granularity than the guest, introducing extra delays
+      and cache/TLB thrashing on vCPU migration
+  \end{itemize}
+\end{itemize}
+\column{0.45\linewidth}
+\includegraphics[width=\linewidth]{problem}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Proposed Solution: steal-driven vCPU backoff}
+\begin{columns}
+\column{0.55\linewidth}
+\begin{itemize}
+  \item Every guest does proportional back-off
+  \item The amount of vCPUs to use is driven by steal time
+  \item The vCPUs each guest can safely use are denoted as
+    \emph{preferred} CPUs
+  \item Aim: sum of preferred CPUs $\le$ pCPUs, which achieves less
+    vCPU preemption
+\end{itemize}
+\medskip
+Advantage of a context switch within the vCPU instead:
+\begin{itemize}
+  \item Lockholder runs to completion (\texttt{preempt\_disable()})
+  \item No hypervisor overhead
+\end{itemize}
+\column{0.45\linewidth}
+\includegraphics[width=\linewidth]{solution}
+\end{columns}
+\end{frame}
+
+\section{Existing methods}
+
+\begin{frame}{Existing Methods}
+Discussed in detail at LPC 2025 -- why no existing methods work.
+A quick glance:
+\begin{itemize}
+  \item \textbf{Explicit affinity:} can't expect a user to set
+    affinity for each workload
+  \item \textbf{CPU hotplug:} slow, expensive, breaks user-specified
+    affinities
+  \item \textbf{Isolated cpuset partitions:} needs sched domain
+    rebuild, breaks user-specified affinities
+  \item \textbf{Capacity-aware scheduling:} doesn't push tasks from a
+    CPU under high load
+\end{itemize}
+\end{frame}
+
+\section{Journey so far}
+
+\begin{frame}{Journey so far\ldots}
+\begin{itemize}
+  \item \textbf{LPC 2024} -- introduced the problem statement. A new
+    load balancing type \texttt{cpu\_parked} was used. This was a
+    PoC, slow in moving tasks since it depended on the load balancer
+    and heavily on stats.\\
+    {\small\href{https://lore.kernel.org/all/20241204112149.25872-1-huschle@linux.ibm.com/\#r}{[RFC
+    PATCH 0/2] sched/fair: introduce new scheduler group type
+    \texttt{group\_parked}}}
+  \item \textbf{LPC 2025:} a few revisions later, switched to a
+    push-task-mechanism-based method. Much faster and more
+    policy-driven than stats.\\
+    {\small\href{https://lore.kernel.org/all/20251119124449.1149616-1-sshegde@linux.ibm.com/\#r}{[PATCH
+    00/17] Paravirt CPUs and push task for less vCPU preemption}}
+\end{itemize}
+\end{frame}
+
+\section{Design goals}
+
+\begin{frame}{Design Goals}
+\begin{itemize}
+  \item Keep runnable vCPUs close to pCPU count under contention
+  \item Preserve user-specified CPU affinity
+  \item Keep the solution scheduler-native and lightweight
+  \item Provide a debug tunable to adjust based on the platform
+  \item Expose the new CPU state information for consumption
+\end{itemize}
+\end{frame}
+
+\section{Implementation details}
+
+\begin{frame}{New CPU State: \texttt{cpu\_preferred\_mask}}
+\begin{itemize}
+  \item Represents CPUs the scheduler should currently prefer
+  \item Not a hard exclusion: affinity is still respected
+  \item Dynamic and policy-driven
+  \item Maintains the design construct:\\
+    preferred $\le$ online $\le$ possible
+\end{itemize}
+\medskip
+{\small\href{https://lore.kernel.org/all/20260407191950.643549-1-sshegde@linux.ibm.com/\#r}{[PATCH
+v2 00/17] sched/paravirt: Introduce \texttt{cpu\_preferred\_mask} and
+steal-driven vCPU backoff}}
+\end{frame}
+
+\begin{frame}{Sched feature: \texttt{STEAL\_MONITOR}}
+\begin{itemize}
+  \item In \texttt{sched\_tick()}, check if it is time to compute steal
+    time
+  \item Kick off a work function to compute steal time -- keeps
+    \texttt{sched\_tick()} latency minimally affected
+  \item Compute steal time ratio from \texttt{CPUTIME\_STEAL} across
+    all online CPUs
+  \item If steal time is above the threshold, reduce preferred CPUs
+    by one core. Core granularity is used because some hypervisors
+    (e.g.\ PowerVM) schedule at core granularity -- this yields the
+    best benefit
+  \item If steal time is below the threshold, increase preferred
+    CPUs by one core
+  \item Simple heuristics avoid oscillations: only consecutive
+    high/low steal values are considered
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Core APIs being updated}
+\begin{itemize}
+  \item \texttt{is\_cpu\_allowed()}
+  \begin{itemize}
+    \item Try to select a preferred CPU
+    \item If task affinity is only on non-preferred CPUs, return a
+      non-preferred CPU
+    \item Ensure overhead is minimal for the majority use case
+    \item Used by \texttt{select\_fallback\_rq()}, the push-task
+      mechanism, and wake-ups
+  \end{itemize}
+  \item \texttt{available\_idle\_cpu()}
+  \begin{itemize}
+    \item Make the CPU available if it is part of preferred CPUs
+    \item Handles wake-up decisions; used by CFS
+  \end{itemize}
+  \item \texttt{\_\_cpupri\_find()}
+  \begin{itemize}
+    \item Consider only preferred CPUs when finding
+      \texttt{lowest\_rq} for RT tasks
+  \end{itemize}
+\end{itemize}
+\end{frame}
+
+\begin{frame}{How it all fits together}
+\begin{itemize}
+  \item On task wake-up, when choosing a CPU, pick a preferred CPU
+    where possible
+  \item Load-balance only among preferred CPUs, so load balance and
+    push-task don't fight each other; load stays on preferred CPUs
+  \item At \texttt{sched\_tick()}, the first check: is this CPU
+    non-preferred? If so, push the task out via a stopper thread.
+    Only the current task is pushed (keeps it simple). Since the
+    work is not done in \texttt{sched\_tick()}, IRQ latency shouldn't
+    increase much
+  \item A task is pushed only if it doesn't break affinity. If a
+    task is bound only on non-preferred CPUs, there is no point
+    pushing it out
+\end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]{User Visibility \& Control}
+\begin{itemize}
+  \item \texttt{/sys/devices/system/cpu/preferred} -- current
+    preferred CPUs
+  \item \texttt{STEAL\_MONITOR} sched feature (disabled by default)
+  \item Debugfs knobs for thresholds and sampling period
+\end{itemize}
+\begin{verbatim}
+# echo STEAL_MONITOR > /sys/kernel/debug/sched/features
+# echo NO_STEAL_MONITOR > /sys/kernel/debug/sched/features
+
+# pwd
+/sys/kernel/debug/sched
+steal_mon_high:500
+steal_mon_low:200
+steal_mon_period:1000
+\end{verbatim}
+\end{frame}
+
+\section{s390 background}
+
+\begin{frame}{s390 challenges}
+\begin{itemize}
+  \item Large system: \textasciitilde 200 cores
+  \item There is no bare-metal Linux on s390
+  \item Proprietary type-1 hypervisor: PR/SM
+  \begin{itemize}
+    \item Unlikely to add Linux-specific enhancements
+  \end{itemize}
+  \item Overcommit and steal time
+  \item Whole-system performance vs.\ single-VM performance
+\end{itemize}
+\end{frame}
+
+\begin{frame}{s390 Hiperdispatch}
+\begin{itemize}
+  \item PR/SM designates CPUs as high, medium, and low, and lets the
+    guest know which is which
+  \item PR/SM frequently steals low CPUs for a long time
+  \item Problem: exits to PR/SM are expensive
+  \item Idea: avoid scheduling threads on low CPUs that had steal
+    time recently
+\end{itemize}
+\medskip
+\textbf{Hiperdispatch}
+\begin{itemize}
+  \item Created by Tobias Huschle and Mete Durlu
+  \item Upstream since v6.12
+  \item Uses capacity-aware scheduling
+  \item Does not handle heavy overcommit
+\end{itemize}
+\end{frame}
+
+\begin{frame}{s390 Warning Track Interrupt}
+\begin{itemize}
+  \item Problem: contention if a lock holder is stolen
+  \item PR/SM sends an interrupt shortly before stealing a CPU
+  \item Idea: park CPUs that are about to be stolen to prevent them
+    from taking locks
+\end{itemize}
+\medskip
+\textbf{WTI}
+\begin{itemize}
+  \item Created by Tobias Huschle and Mete Durlu
+  \item Upstream since v6.12
+  \item Schedules a real-time thread to yield to the hypervisor ASAP
+\end{itemize}
+\end{frame}
+
+\section{Performance numbers}
+
+\begin{frame}{Performance numbers: PowerPC / PowerVM hypervisor}
+\begin{center}
+\includegraphics[width=0.85\linewidth,height=0.75\textheight,keepaspectratio]{perf-powerpc}
+\end{center}
+\end{frame}
+
+\begin{frame}{Performance numbers: s390 PR/SM}
+\begin{itemize}
+  \item s390 host with 37 cores
+  \item 4 partitions with 37 shared cores each
+  \item Workload 1: \texttt{stress-ng -{}-matrix 37}
+  \item Workload 2: \texttt{uperf} ping-pong
+  \item Workload 3: \texttt{uperf} streaming
+\end{itemize}
+\medskip
+\textbf{Results:}
+\begin{itemize}
+  \item \textasciitilde 2x throughput improvement for all workloads
+  \item Steal time reduction from \textasciitilde 60\% to
+    \textasciitilde 5\%
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Performance numbers: KVM}
+\begin{itemize}
+  \item 2--16 VMs
+  \item 4--32 CPUs each
+  \item s390 host with 16 cores
+  \item x86\_64 host with 32 cores
+  \item Up to 4x overcommit
+  \item Each VM runs the same benchmark
+  \begin{itemize}
+    \item \texttt{hackbench}, \texttt{pgbench}, \texttt{schbench},
+      \texttt{sysbench}
+  \end{itemize}
+  \item Throughputs are summed across all VMs
+  \item Repeated 10 times to quantify noise
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Performance numbers: s390 KVM}
+\vspace*{-0.8cm}
+\begin{center}
+\includegraphics[width=0.92\paperwidth,height=0.92\paperheight,keepaspectratio]{perf-s390-kvm}
+\end{center}
+\end{frame}
+
+\begin{frame}{Performance numbers: x86\_64 KVM}
+\vspace*{-0.8cm}
+\begin{center}
+\includegraphics[width=0.92\paperwidth,height=0.92\paperheight,keepaspectratio]{perf-x86-kvm}
+\end{center}
+\end{frame}
+
+\section{Open questions}
+
+\begin{frame}{Open Questions and Future Work}
+\begin{itemize}
+  \item Augment the generic policy with arch-specific hints, like
+    power entitlements or s390 polarization. Arch-specific hooks in
+    the steal-time monitor code?
+  \item Interaction with \texttt{irqbalance}: make it preferred-mask-aware, or require it to be disabled?
+  \item Is there any !SMT system interested in this?
+  \item NUMA-awareness to avoid cross-node penalties
+  \item \texttt{sched\_ext}?
+  \item How to avoid oscillations in complex overcommit cases?
+  \item Should steal time be computed based on online CPUs or
+    preferred CPUs?
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Legal statement}
+\begin{itemize}
+  \item This work represents the view of the authors and does not
+    necessarily represent the view of IBM
+  \item IBM and IBM (logo) are trademarks or registered trademarks
+    of International Business Machines Corporation in the United
+    States and/or other countries
+  \item Linux is a registered trademark of Linus Torvalds
+  \item Other company, product, and service names may be trademarks
+    or service marks of others
+\end{itemize}
+\end{frame}
+
+\begin{frame}[plain]
+\begin{center}
+{\Huge Thank You}
+\end{center}
+\end{frame}
+
+\end{document}

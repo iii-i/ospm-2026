@@ -1,0 +1,145 @@
+% Copyright (c) 2009,2015 IBM
+%
+% Author: Andreas Arnez
+
+\mode<presentation>
+
+%\pgfdeclareimage[height=6.5mm]{ibm-logo}{logos/ibm_logo}
+%\pgfdeclareimage[height=3.8mm]{ibm-logo-small}{logos/ibm_logo}
+
+\defaultfontfeatures{Mapping=tex-text}
+\newfontface\ibmlogofont[Scale=.95,Path=./]{IBM Logo8}
+\newfontface\ibmfooterfont[Scale=.8]{Liberation Sans}
+\def\mycopyright{©\relax}
+\setsansfont{FreeSans}
+\catcode`©=12
+
+\setbeamercolor{structure}{fg=black,bg=blue!20!white}
+\setbeamercolor{block title}{use=structure,fg=structure.fg,bg=white}
+\setbeamercolor{block title alerted}{use=alerted text,fg=alerted text.fg,bg=alerted text.fg!20!bg}
+\setbeamercolor{block title example}{use=example text,fg=example text.fg,bg=example text.fg!20!bg}
+
+\setbeamercolor{block body}{parent=normal text,use=block title,bg=block title.bg}
+\setbeamercolor{block body alerted}{parent=normal text,use=block title alerted,bg=block title alerted.bg!50!bg}
+\setbeamercolor{block body example}{parent=normal text,use=block title example,bg=block title example.bg!50!bg}
+
+%\setbeamercolor*{palette primary}{use=structure,fg=structure.bg,bg=structure.fg}
+%\setbeamercolor*{palette secondary}{parent=palette primary}
+%\setbeamercolor*{palette tertiary}{parent=palette primary}
+%\setbeamercolor*{palette quaternary}{parent=palette primary}
+
+\setbeamercolor*{titlelike}{use=structure,fg=structure.fg}
+\setbeamercolor*{titlematter}{fg=blue!75!black}
+
+%\setbeamercolor*{separation line}{}
+%\setbeamercolor*{fine separation line}{}
+
+\defbeamertemplate*{itemize item}{ClearIBM theme} {\hbox{\donotcoloroutermaths$\bullet$}}
+\defbeamertemplate*{itemize subitem}{ClearIBM theme} {\hbox{--}}
+\defbeamertemplate*{itemize subsubitem}{ClearIBM theme} {\hbox{-}}
+
+\AtBeginDocument{%
+  {
+    \usebeamercolor[fg]{titlematter}
+    \pgfdeclareverticalshading{beamer@titlefade}{\paperwidth}
+    {%
+      color(0mm)=(bg);
+      color(51mm)=(fg!30!bg)%
+    }
+  }
+}
+
+\defbeamertemplate{section in toc}{clear}
+{\leavevmode\leftskip=2em%
+  \llap{%
+    \usebeamerfont*{section number projected}%
+    \usebeamercolor{section number projected}%
+    \begin{pgfpicture}{-1ex}{0ex}{1ex}{2ex}
+      \color{bg}
+      \pgfpathcircle{\pgfpoint{0pt}{.75ex}}{1.2ex}
+      \pgfusepath{fill}
+      \pgftext[base]{\color{fg}\inserttocsectionnumber}
+    \end{pgfpicture}\kern1.25ex%
+  }%
+  \textbf{\inserttocsection}\par}
+
+\defbeamertemplate{subsection in toc}{clear}
+{\leavevmode\leftskip=4em%
+  \llap{%
+    \footnotesize
+    \textbf{\inserttocsectionnumber.\inserttocsubsectionnumber}%
+  }\quad\inserttocsubsection\par}
+
+\setbeamertemplate{sections/subsections in toc}[clear]
+
+\setbeamerfont{footnote}{size=\scriptsize}
+
+\defbeamertemplate*{frametitle}{ClearIBM theme}[1][left]
+{
+  \begin{beamercolorbox}[#1,wd=\the\textwidth]{frametitle}
+    \usebeamerfont{frametitle}%
+    \usebeamercolor[fg]{frametitle}%
+    \strut\insertframetitle\strut\par%
+    \usebeamerfont{framesubtitle}\usebeamercolor[fg]{framesubtitle}%
+    \textbf{\insertframesubtitle\strut}\par%
+  \end{beamercolorbox}%
+}
+
+% Beamer page size: 12.80cm x 9.60cm
+% Presentation template size: 25.40cm x 19.05cm
+
+\setbeamersize{text margin left=4.8mm,text margin right=4.8mm}
+
+\defbeamertemplate*{headline}{ClearIBM theme}
+{
+  \vskip 4.2mm
+}
+
+\definecolor{ibmlogo}{HTML}{A7A9AB}
+\definecolor{ibmlogoi}{HTML}{193F5B}
+\definecolor{ibmlogob}{HTML}{04A8CB}
+\definecolor{ibmlogom}{HTML}{0F7FAB}
+
+\defbeamertemplate*{footline}{ClearIBM theme}
+{
+%  \leavevmode%
+  \vbox{%
+    \hbox to \paperwidth{\hskip 4.8mm%
+      \usebeamerfont{date in head/foot}%
+      \ibmfooterfont
+      \hbox to 5.7mm{\textbf{\insertframenumber{}}\hfil}%
+      \tiny\mycopyright~\the\year~IBM~Corporation\hfill
+      \insertshortdate\quad\quad
+      %\the\month/\the\day/\the\year\hfill
+      \rlap{\tikz{\pgftext[rotate=90]{\ibmlogofont\color{ibmlogo}\large IBM}}}%
+      \hskip 4.8mm}%
+    \vskip 2.2mm
+  }%
+}
+
+\beamertemplatenavigationsymbolsempty
+
+\defbeamertemplate*{title page}{ClearIBM theme}
+{
+  \raggedright
+  \vbox to\paperheight{%
+    \textwidth=\paperwidth \advance\textwidth by -9.6mm
+    \vskip-1pt
+    \hbox{\hskip-4.8mm\pgfuseshading{beamer@titlefade}}\vskip1pt
+    \vskip-51mm
+    \hbox{\vbox to 51mm{\vfill\usebeamerfont{title}\huge%
+        \inserttitle\par\medskip
+        \usebeamerfont{subtitle}\insertsubtitle}}%
+    \vskip0pt plus .55filll
+    \hbox{\hskip2pt\advance\textwidth by-2pt\vbox{%
+        \ibmfooterfont\scriptsize\insertauthor\par
+        \insertdate, \insertinstitute}}%
+    \vskip 0pt plus .45filll
+    \hbox to\textwidth{\hfill\ibmlogofont\Large%
+      \color{ibmlogoi}I\color{ibmlogob}B\color{ibmlogom}M}%
+    \vskip 2.2mm
+  }%
+}
+
+\mode
+<all>
