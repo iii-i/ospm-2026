@@ -186,7 +186,7 @@ A quick glance:
   \item Not a hard exclusion: affinity is still respected
   \item Dynamic and policy-driven
   \item Maintains the design construct:\\
-    preferred $\le$ online $\le$ possible
+    preferred $\subseteq$ online $\subseteq$ possible
 \end{itemize}
 \medskip
 {\small\href{https://lore.kernel.org/all/20260407191950.643549-1-sshegde@linux.ibm.com/\#r}{[PATCH
@@ -260,8 +260,7 @@ steal-driven vCPU backoff}}
 \begin{itemize}
   \item \texttt{/sys/devices/system/cpu/preferred} -- current
     preferred CPUs
-  \item \texttt{STEAL\_MONITOR} sched feature -- per-architecture
-    opt-in; off until the arch enables it
+  \item \texttt{STEAL\_MONITOR} sched feature
   \item Debugfs knobs for thresholds and sampling period -- escape
     hatch for debugging, not a per-workload admin interface
   \item Plan: pick per-architecture defaults
@@ -388,22 +387,29 @@ steal_mon_period:1000
 
 \begin{frame}{Open Questions: Concept}
 \begin{itemize}
+  \item Is the problem valid and the design sound for the majority
+    use case? Is the posted code upstreamable?
   \item Is there any !SMT system interested in this?
   \item How to avoid oscillations in complex overcommit cases?
-  \item Interaction with \texttt{irqbalance}: make it
-    preferred-mask-aware, or require it to be disabled?
-  \item \texttt{sched\_ext}?
+  \item \texttt{irqbalance} must be made preferred-mask-aware; when
+    it is off, should the kernel push IRQs off non-preferred CPUs?
+  \item Should \texttt{sched\_ext} tasks be pushed too, in addition to
+    the fair and RT tasks handled today?
 \end{itemize}
 \end{frame}
 
 \begin{frame}{Open Questions: Implementation}
 \begin{itemize}
-  \item Augment the generic policy with arch-specific hints, like
-    power entitlements or s390 polarization. Arch-specific hooks in
-    the steal time monitor code?
-  \item NUMA-awareness to avoid cross-node penalties
-  \item Should steal time be computed based on online CPUs or
-    preferred CPUs?
+  \item Arch-specific hook to choose which CPU to drop from the
+    preferred mask, e.g.\ based on power entitlements or s390
+    polarization
+  \begin{itemize}
+    \item Default: NUMA-aware -- pack onto one node, or spread
+      across nodes? Spreading likely wins -- more resources overall
+      at the cost of cross-node penalties
+  \end{itemize}
+  \item \texttt{STEAL\_MONITOR} off by default, with each arch
+    opting in -- is that the right default?
 \end{itemize}
 \end{frame}
 
