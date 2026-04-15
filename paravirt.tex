@@ -96,9 +96,8 @@ aspectratio=169%
       different granularity than the guest, introducing extra delays
       and cache/TLB thrashing on vCPU migration
   \end{itemize}
-  \item \textbf{Design constraint:} the hypervisor is
-    non-cooperative -- no host-side changes,
-    no inter-guest channel (e.g.\ PR/SM, PowerVM)
+  \item \textbf{Design constraint:} support different hypervisors,
+      which means no guest-to-host or inter-guest channels
 \end{itemize}
 \column{0.45\linewidth}
 \includegraphics[width=\linewidth]{problem}
@@ -385,21 +384,16 @@ steal_mon_period:1000
 
 \section{Open questions}
 
-\begin{frame}{Open Questions: Concept}
+\begin{frame}{Open Questions}
 \begin{itemize}
   \item Is the design sound for the majority use case?
   \item Upstream readiness?
   \item Is there any !SMT system interested in this?
   \item How to avoid oscillations in complex overcommit cases?
-  \item \texttt{irqbalance} must be made preferred-mask-aware; when
-    it is off, should the kernel push IRQs off non-preferred CPUs?
+  \item When \texttt{irqbalance} is off (rare), should the kernel
+    push IRQs off non-preferred CPUs?
   \item Should \texttt{sched\_ext} tasks be pushed too, in addition to
     the fair and RT tasks handled today?
-\end{itemize}
-\end{frame}
-
-\begin{frame}{Open Questions: Implementation}
-\begin{itemize}
   \item Arch-specific hook to choose which CPU to drop from the
     preferred mask, e.g.\ based on power entitlements or s390
     polarization
@@ -410,74 +404,6 @@ steal_mon_period:1000
   \end{itemize}
   \item \texttt{STEAL\_MONITOR} off by default, with each arch
     opting in -- is that the right default?
-\end{itemize}
-\end{frame}
-
-\section*{Backup}
-
-\begin{frame}{Backup: avoiding host under-utilization}
-\begin{itemize}
-  \item \textbf{Implemented today:} fast shrink, slow grow -- same
-    as TCP
-  \item \textbf{Idea:} EWMA-filter the steal time signal -- same
-    as PELT
-  \item \textbf{Idea:} rate limit preferred-mask changes
-  \item \textbf{Idea:} randomize the sampling phase and mask-change
-    rate across guests to avoid synchronized decisions
-\end{itemize}
-\end{frame}
-
-\begin{frame}{Backup: fairness without coordination}
-\begin{itemize}
-  \item Non-cooperative hypervisors are the main reason this work
-    exists
-  \item Coordination via the host is not an option on PR/SM or PowerVM
-  \item Similar to TCP: no central coordinator
-  \item One could do better there with explicit host cooperation, but
-    the uncoordinated mechanism already improves things
-\end{itemize}
-\end{frame}
-
-\begin{frame}{Backup: is this SMT-specific?}
-\begin{itemize}
-  \item No. Nothing in the mechanism depends on SMT
-  \item Current implementation adjusts the preferred mask by one
-    \emph{core} only because some hypervisors (e.g.\ PowerVM) schedule
-    at core granularity
-\end{itemize}
-\end{frame}
-
-\begin{frame}{Backup: steal time collection context}
-\begin{itemize}
-  \item Under heavy overcommit the kworker itself can be stolen
-  \item \textbf{Idea:} keep the computation inside the tick
-  \item Precedent: PELT already runs inline from the tick, so this
-    would not be worse:\\
-    \texttt{sched\_tick() $\to$ task\_tick\_fair() $\to$
-    entity\_tick() $\to$ update\_load\_avg() $\to$
-    \_\_update\_load\_avg\_se()}
-\end{itemize}
-\end{frame}
-
-\begin{frame}{Backup: relative steal time}
-\begin{itemize}
-  \item Many VMs with low utilization can cause overcommit
-  \item Absolute steal time misses this
-  \item \textbf{Idea:} divide steal time by non-idle time
-\end{itemize}
-\end{frame}
-
-\begin{frame}{Backup: replacing \texttt{stop\_one\_cpu\_nowait()}}
-\begin{itemize}
-  \item Current v2 pushes tasks off non-preferred CPUs via the CPU
-    stopper -- heavy-handed (runs at \texttt{stop\_sched\_class},
-    above RT/DL) for what is a soft placement hint
-  \item \textbf{Idea:} build on Vincent Guittot's CFS push-task mechanism
-  \item {\small\href{https://lore.kernel.org/all/20251202181242.1536213-1-vincent.guittot@linaro.org/}{[PATCH
-    0/6 v8] sched/fair: Add push task mechanism and handle more EAS
-    cases}}
-  \item \textbf{Idea:} extend it to push all tasks off a CPU
-  \item \textbf{Idea:} reuse the CPU-offline task pushing code
 \end{itemize}
 \end{frame}
 
@@ -498,6 +424,61 @@ steal_mon_period:1000
 \begin{center}
 {\Huge Thank You}
 \end{center}
+\end{frame}
+
+\section*{Extras}
+
+\begin{frame}{Extras: avoiding host under-utilization and oscillations}
+\begin{itemize}
+  \item \textbf{Goals:} avoid host under-utilization, avoid
+    oscillations
+  \item \textbf{Implemented today:} slow shrink, slow grow
+  \item \textbf{Ideas:}
+  \begin{itemize}
+    \item Smooth the steal time signal with an EWMA filter -- same
+      as PELT
+    \item PI(D) controller on the steal time signal
+  \end{itemize}
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Extras: fairness without coordination}
+\begin{itemize}
+  \item Non-cooperative hypervisors are the main reason this work
+    exists
+  \item Coordination via the host is not an option on PR/SM or PowerVM
+  \item Similar to TCP: no central coordinator
+  \item One could do better there with explicit host cooperation, but
+    the uncoordinated mechanism already improves things
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Extras: is this SMT-specific?}
+\begin{itemize}
+  \item No. Nothing in the mechanism depends on SMT
+  \item Current implementation adjusts the preferred mask by one
+    \emph{core} only because some hypervisors (e.g.\ PowerVM) schedule
+    at core granularity
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Extras: relative steal time}
+\begin{itemize}
+  \item Many VMs with low utilization can cause overcommit
+  \item Absolute steal time misses this
+  \item \textbf{Idea:} divide steal time by non-idle time
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Extras: alternative push task mechanisms}
+\begin{itemize}
+  \item Vincent Guittot's CFS push-task mechanism
+  \item {\small\href{https://lore.kernel.org/all/20251202181242.1536213-1-vincent.guittot@linaro.org/}{[PATCH
+    0/6 v8] sched/fair: Add push task mechanism and handle more EAS
+    cases}}
+  \item Push all tasks off a CPU
+  \item Reuse the CPU-offline task pushing code
+\end{itemize}
 \end{frame}
 
 \end{document}
