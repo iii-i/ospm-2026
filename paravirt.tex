@@ -111,12 +111,12 @@ aspectratio=169%
 \begin{itemize}
   \item The vCPUs each guest can safely use are denoted as
     \emph{preferred} CPUs
+  \item \textbf{Aim:} sum of preferred CPUs $\le$ pCPUs, which
+    achieves less vCPU preemption
   \item \textbf{Mechanism:} each guest independently adjusts its
     preferred CPU set from locally observed steal time
   \item \textbf{Fairness:} all guests run the same backoff logic, so
     they converge without talking to each other
-  \item \textbf{Aim:} sum of preferred CPUs $\le$ pCPUs, which
-    achieves less vCPU preemption
 \end{itemize}
 \medskip
 Advantage of a context switch within the vCPU instead:
@@ -188,10 +188,6 @@ A quick glance:
   \item Maintains the design construct:\\
     preferred $\subseteq$ online $\subseteq$ possible
 \end{itemize}
-\medskip
-{\small\href{https://lore.kernel.org/all/20260407191950.643549-1-sshegde@linux.ibm.com/\#r}{[PATCH
-v2 00/17] sched/paravirt: Introduce \texttt{cpu\_preferred\_mask} and
-steal-driven vCPU backoff}}
 \end{frame}
 
 \begin{frame}{Sched feature: \texttt{STEAL\_MONITOR}}
@@ -254,6 +250,10 @@ steal-driven vCPU backoff}}
     task is bound only on non-preferred CPUs, there is no point
     pushing it out
 \end{itemize}
+\medskip
+{\small\href{https://lore.kernel.org/all/20260407191950.643549-1-sshegde@linux.ibm.com/\#r}{[PATCH
+v2 00/17] sched/paravirt: Introduce \texttt{cpu\_preferred\_mask} and
+steal-driven vCPU backoff}}
 \end{frame}
 
 \begin{frame}[fragile]{User Visibility \& Control}
